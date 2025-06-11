@@ -93,7 +93,7 @@ namespace Uala.Challenge.UnitTests.Application.Users.Commands
             _userRepositoryMock.Setup(r => r.Get(followedId, false, false)).ReturnsAsync(followed);
 
             // Act & Assert
-            var ex = Assert.ThrowsAsync<Exception>(() => _handler.Handle(command, CancellationToken.None));
+            var ex = Assert.ThrowsAsync<ArgumentException>(() => _handler.Handle(command, CancellationToken.None));
             Assert.AreEqual($"User {follower.Id} to remove is not following user {followed.Id}", ex.Message);
             _userRepositoryMock.Verify(r => r.UpdateAsync(It.IsAny<User>()), Times.Never);
         }

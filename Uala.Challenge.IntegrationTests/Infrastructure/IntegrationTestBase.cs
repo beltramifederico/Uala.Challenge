@@ -6,10 +6,13 @@ using Microsoft.EntityFrameworkCore;
 using Testcontainers.PostgreSql;
 using Testcontainers.MongoDb;
 using Testcontainers.Redis;
+using Testcontainers.Kafka;
 using Uala.Challenge.Infrastructure.Services;
 using MongoDB.Driver;
 using Uala.Challenge.Domain.Services;
 using Uala.Challenge.Infrastructure.DAL.Contexts;
+using Uala.Challenge.Application.Interfaces;
+using Microsoft.Extensions.Configuration;
 
 namespace Uala.Challenge.IntegrationTests.Infrastructure;
 
@@ -21,6 +24,7 @@ public class IntegrationTestBase
     private PostgreSqlContainer _postgresContainer = null!;
     private MongoDbContainer _mongoContainer = null!;
     private RedisContainer _redisContainer = null!;
+    private KafkaContainer _kafkaContainer = null!;
 
     [OneTimeSetUp]
     public async Task InitializeAsync()
@@ -40,10 +44,14 @@ public class IntegrationTestBase
         _redisContainer = new RedisBuilder()
             .Build();
 
+        _kafkaContainer = new KafkaBuilder()
+            .Build();
+
         await Task.WhenAll(
             _postgresContainer.StartAsync(),
             _mongoContainer.StartAsync(),
-            _redisContainer.StartAsync()
+            _redisContainer.StartAsync(),
+            _kafkaContainer.StartAsync()
         );
 
         // Create test application factory
@@ -52,6 +60,19 @@ public class IntegrationTestBase
             {
                 builder.UseEnvironment("Testing");
                 
+                builder.ConfigureAppConfiguration((context, config) =>
+                {
+                    // Add test configuration
+                    config.AddInMemoryCollection(new Dictionary<string, string>
+                    {
+                        ["ConnectionStrings:PostgresConnection"] = _postgresContainer.GetConnectionString(),
+                        ["ConnectionStrings:MongoConnection"] = _mongoContainer.GetConnectionString(),
+                        ["ConnectionStrings:RedisConnection"] = _redisContainer.GetConnectionString(),
+                        ["ConnectionStrings:Kafka"] = _kafkaContainer.GetBootstrapAddress(),
+                        ["MongoDbName"] = "uala_test"
+                    });
+                });
+                
                 builder.ConfigureServices(services =>
                 {
                     // Remove existing database contexts
@@ -59,6 +80,7 @@ public class IntegrationTestBase
                     services.RemoveAll(typeof(PostgresDbContext));
                     services.RemoveAll(typeof(IMongoDatabase));
                     services.RemoveAll(typeof(ICacheService));
+                    services.RemoveAll(typeof(IKafkaProducer));
 
                     // Add test database contexts
                     services.AddDbContext<PostgresDbContext>(options =>
@@ -81,6 +103,10 @@ public class IntegrationTestBase
                     });
                     
                     services.AddSingleton<ICacheService, RedisCacheService>();
+
+                    // Add test Kafka
+                    services.AddSingleton<IKafkaProducer, KafkaProducer>();
+                    services.AddHostedService<TweetCreatedConsumer>();
                 });
             });
 
@@ -109,6 +135,8 @@ public class IntegrationTestBase
             await _mongoContainer.DisposeAsync();
         if (_redisContainer != null)
             await _redisContainer.DisposeAsync();
+        if (_kafkaContainer != null)
+            await _kafkaContainer.DisposeAsync();
     }
 
     private async Task InitializeDatabasesAsync()

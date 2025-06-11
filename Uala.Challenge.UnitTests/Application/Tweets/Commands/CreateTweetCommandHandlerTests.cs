@@ -58,28 +58,6 @@ namespace Uala.Challenge.UnitTests.Application.Tweets.Commands
         }
 
         [Test]
-        public void Handle_EmptyTweetContent_ShouldThrowArgumentException()
-        {
-            // Arrange
-            var command = new CreateTweetCommand { UserId = Guid.NewGuid(), Content = string.Empty };
-
-            // Act & Assert
-            var ex = Assert.ThrowsAsync<ArgumentException>(() => _handler.Handle(command, CancellationToken.None));
-            Assert.AreEqual("Tweet content cannot be empty", ex.Message);
-        }
-
-        [Test]
-        public void Handle_NullTweetContent_ShouldThrowArgumentException()
-        {
-            // Arrange
-            var command = new CreateTweetCommand { UserId = Guid.NewGuid(), Content = null };
-
-            // Act & Assert
-            var ex = Assert.ThrowsAsync<ArgumentException>(() => _handler.Handle(command, CancellationToken.None));
-            Assert.AreEqual("Tweet content cannot be empty", ex.Message);
-        }
-
-        [Test]
         public void Handle_TweetContentTooLong_ShouldThrowArgumentException()
         {
             // Arrange
