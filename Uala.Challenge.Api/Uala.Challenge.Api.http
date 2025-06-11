@@ -1,0 +1,6 @@
+@Uala.Challenge.Api_HostAddress = http://localhost:5217
+
+GET {{Uala.Challenge.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

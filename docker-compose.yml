@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database for Users
+  postgres:
+    image: postgres:15
+    container_name: uala-postgres
+    environment:
+      POSTGRES_DB: UalaChallenge
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: yoursecurepassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - uala-network
+
+  # MongoDB Database for Tweets
+  mongodb:
+    image: mongo:7
+    container_name: uala-mongo
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: rootpassword
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - uala-network
+
+  # Redis Cache for Timeline Optimization
+  redis:
+    image: redis:7-alpine
+    container_name: uala-redis
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - uala-network
+    restart: unless-stopped
+
+  # API Application
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: uala-api
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__PostgresConnection=Host=postgres;Database=UalaChallenge;Username=postgres;Password=yoursecurepassword
+      - ConnectionStrings__MongoConnection=mongodb://root:rootpassword@mongodb:27017
+      - ConnectionStrings__RedisConnection=redis:6379
+      - MongoDbName=UalaChallenge
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - mongodb
+      - redis
+    networks:
+      - uala-network
+
+volumes:
+  postgres_data:
+  mongodb_data:
+  redis_data:
+
+networks:
+  uala-network:
+    driver: bridge

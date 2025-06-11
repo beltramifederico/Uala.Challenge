@@ -1,0 +1,66 @@
+# Supuestos de Negocio y Técnicos - Uala Challenge
+
+Este documento lista los supuestos realizados durante el desarrollo de la plataforma de microblogging.
+
+## Supuestos Proporcionados por el Challenge
+
+- La autenticación de usuarios y manejo de sesiones no son requeridos. La identidad del usuario (userId) se asume válida y se pasa directamente en las peticiones de la API.
+- El objetivo principal es diseñar una solución que pueda escalar a millones de usuarios.
+- La aplicación debe estar optimizada para operaciones de lectura (ej: obtener timelines).
+- No es necesario desarrollar un frontend.
+- Se puede utilizar una base de datos en memoria, pero debe especificarse en la documentación qué motor o tipo de base de datos se usaría en producción y por qué.
+
+## Supuestos Agregados Durante el Desarrollo
+
+### Reglas de Negocio
+- Un usuario no puede seguirse a sí mismo. El sistema previene esta acción.
+- Un usuario no puede seguir a otro usuario que ya está siguiendo (evita duplicados).
+- Un usuario puede dejar de seguir a alguien solo si actualmente lo está siguiendo.
+- Los tweets tienen un límite máximo de 280 caracteres.
+- Los timestamps se almacenan en formato UTC para asegurar consistencia entre diferentes zonas horarias.
+
+### Decisiones Técnicas
+- **Polyglot Persistence**: Se utiliza PostgreSQL para datos relacionales (usuarios y relaciones de seguimiento) y MongoDB para tweets y timelines, optimizando cada base de datos para su caso de uso específico.
+- **Paginación**: Se implementa paginación en los endpoints de timeline para manejar eficientemente grandes volúmenes de datos.
+- **CQRS**: Se separan claramente las operaciones de comando (escritura) y consulta (lectura) usando MediatR.
+- **Desnormalización**: Los datos de tweets incluyen información del usuario para optimizar las consultas de timeline.
+- **Consistencia Eventual**: El sistema prioriza la consistencia eventual para la generación de timelines, un patrón común en redes sociales de gran escala.
+
+### Consideraciones de Escalabilidad
+- **Sharding de Base de Datos**: MongoDB soporta escalado horizontal a través de sharding para manejar grandes volúmenes de tweets.
+- **Réplicas de Lectura**: PostgreSQL puede escalarse a través de réplicas de lectura para las consultas de usuarios.
+- **Caché**: Se puede implementar caché con Redis para timelines frecuentemente accedidos y relaciones de usuarios.
+- **Load Balancing**: La API puede desplegarse detrás de un load balancer con múltiples instancias para manejar tráfico incrementado.
+
+### Supuestos de Datos
+- Los IDs de usuario y tweet son GUIDs para garantizar unicidad en sistemas distribuidos.
+- Los usernames son únicos en el sistema (aunque no se valida explícitamente en esta implementación).
+- No hay límite en el número de usuarios que un usuario puede seguir.
+- No hay límite en el número de tweets que un usuario puede publicar.
+
+### Supuestos de Seguridad
+- No se implementa autenticación ni autorización en esta versión del challenge.
+- No se valida la propiedad de los tweets (cualquier userId puede crear tweets).
+- No se implementan rate limiting ni protecciones contra spam.
+
+### Supuestos de Performance
+- Las operaciones de lectura (timeline) son más frecuentes que las de escritura (crear tweets, seguir usuarios).
+- Los timelines se generan bajo demanda (fan-out on read) en lugar de pre-calcularlos (fan-out on write).
+- La paginación por defecto es de 10 elementos por página para balancear performance y usabilidad.
+
+## Decisiones de Implementación
+
+### Testing
+- Se priorizan las pruebas unitarias para la lógica de negocio principal.
+- Se utilizan mocks para aislar las dependencias externas (bases de datos).
+- Se incluyen tests para casos de error y validaciones de negocio.
+
+### Logging
+- Se utiliza Serilog para logging estructurado.
+- Se registran eventos importantes para debugging y monitoreo en producción.
+
+### Configuración
+- Las connection strings y configuraciones sensibles se manejan a través del sistema de configuración de .NET.
+- Se soportan diferentes ambientes (Development, Production) con configuraciones específicas.
+
+Estos supuestos fueron realizados para crear una implementación robusta y escalable que demuestre las mejores prácticas de desarrollo de software mientras se mantiene dentro del alcance del challenge técnico.
