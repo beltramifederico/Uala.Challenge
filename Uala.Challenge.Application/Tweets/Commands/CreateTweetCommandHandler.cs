@@ -1,5 +1,7 @@
 using MediatR;
+using Uala.Challenge.Application.Interfaces;
 using Uala.Challenge.Domain.Entities;
+using Uala.Challenge.Domain.Events;
 using Uala.Challenge.Domain.Repositories;
 using Uala.Challenge.Domain.Services;
 
@@ -10,15 +12,18 @@ namespace Uala.Challenge.Application.Tweets.Commands
         private readonly ITweetRepository _tweetRepository;
         private readonly IUserRepository _userRepository;
         private readonly ICacheService _cacheService;
+        private readonly IKafkaProducer _kafkaProducer;
 
         public CreateTweetCommandHandler(
             ITweetRepository tweetRepository, 
             IUserRepository userRepository,
-            ICacheService cacheService)
+            ICacheService cacheService,
+            IKafkaProducer kafkaProducer)
         {
             _tweetRepository = tweetRepository;
             _userRepository = userRepository;
             _cacheService = cacheService;
+            _kafkaProducer = kafkaProducer;
         }
 
         public async Task<CreateTweetCommandResponse> Handle(CreateTweetCommand request, CancellationToken cancellationToken)
@@ -35,6 +40,16 @@ namespace Uala.Challenge.Application.Tweets.Commands
 
             await _tweetRepository.AddAsync(tweet);
 
+            // Publicar evento en Kafka para generar timeline entries
+            var tweetCreatedEvent = new TweetCreatedEvent(
+                tweet.Id,
+                tweet.UserId,
+                tweet.Content,
+                tweet.CreatedAt
+            );
+            
+            await _kafkaProducer.PublishTweetCreatedAsync(tweetCreatedEvent);
+
             await InvalidateFollowersTimelines(user);
 
             return new CreateTweetCommandResponse
@@ -50,7 +65,6 @@ namespace Uala.Challenge.Application.Tweets.Commands
         private async Task InvalidateFollowersTimelines(User user)
         {
             await _cacheService.RemovePatternAsync($"timeline:{user.Id}:*");
-
         }
     }
 }

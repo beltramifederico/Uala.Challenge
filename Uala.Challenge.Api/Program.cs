@@ -14,6 +14,7 @@ builder.Services.AddRepositories();
 builder.Services.AddMediatr();
 builder.Services.AddValidation();
 builder.Services.AddCaching(builder.Configuration);
+builder.Services.AddKafka();
 
 builder.Logging.ConfigSeriLog(builder.Configuration);
 builder.Services.AddSerilog();

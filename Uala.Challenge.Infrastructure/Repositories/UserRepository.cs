@@ -25,6 +25,22 @@ public class UserRepository(PostgresDbContext context) : IUserRepository
             .FirstOrDefaultAsync(x => x.Id == id);
     }
 
+    public async Task<IEnumerable<User>> GetFollowersAsync(Guid userId)
+    {
+        return await _context.Users
+            .Where(u => u.Following.Any(f => f.Id == userId))
+            .AsNoTracking()
+            .ToListAsync();
+    }
+
+    public async Task<IEnumerable<User>> GetUsersByIdsAsync(IEnumerable<Guid> userIds)
+    {
+        return await _context.Users
+            .Where(u => userIds.Contains(u.Id))
+            .AsNoTracking()
+            .ToListAsync();
+    }
+
     public async Task<User?> GetByIdAsync(object id)
     {
         if (id is Guid guidId)

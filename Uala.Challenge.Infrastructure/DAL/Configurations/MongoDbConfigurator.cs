@@ -20,6 +20,7 @@ namespace Uala.Challenge.Infrastructure.DAL.Configurations
                 if (_mapsRegistered) return;
 
                 ConfigureTweetMap();
+                ConfigureTimelineMap();
 
                 _mapsRegistered = true;
             }
@@ -41,5 +42,21 @@ namespace Uala.Challenge.Infrastructure.DAL.Configurations
             }
         }
 
+        private static void ConfigureTimelineMap()
+        {
+            if (!BsonClassMap.IsClassMapRegistered(typeof(Timeline)))
+            {
+                BsonClassMap.RegisterClassMap<Timeline>(cm =>
+                {
+                    cm.AutoMap();
+                    cm.MapIdProperty(t => t.Id)
+                      .SetIdGenerator(GuidGenerator.Instance)
+                      .SetSerializer(new GuidSerializer(BsonType.String));
+                    cm.MapProperty(t => t.UserId).SetSerializer(new GuidSerializer(BsonType.String));
+                    cm.MapProperty(t => t.TweetId).SetSerializer(new GuidSerializer(BsonType.String));
+                    cm.MapProperty(t => t.AuthorId).SetSerializer(new GuidSerializer(BsonType.String));
+                });
+            }
+        }
     }
 }

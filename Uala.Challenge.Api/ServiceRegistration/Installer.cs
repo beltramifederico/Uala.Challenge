@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using System.Reflection;
+using Uala.Challenge.Application.Interfaces;
 using Uala.Challenge.Domain.Repositories;
 using Uala.Challenge.Infrastructure.DAL.Contexts;
 using Uala.Challenge.Infrastructure.Repositories;
@@ -10,6 +11,7 @@ using Uala.Challenge.Domain.Services;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using Uala.Challenge.Api.Middleware;
+using MongoDB.Driver;
 
 namespace Uala.Challenge.Api.ServiceRegistration
 {
@@ -19,6 +21,7 @@ namespace Uala.Challenge.Api.ServiceRegistration
         {
             service.AddScoped<IUserRepository, UserRepository>();
             service.AddScoped<ITweetRepository, TweetRepository>();
+            service.AddScoped<ITimelineRepository, TimelineRepository>();
         }
 
         public static void AddDatabase(this IServiceCollection service, IConfiguration config)
@@ -28,10 +31,13 @@ namespace Uala.Challenge.Api.ServiceRegistration
             service.AddDbContext<PostgresDbContext>(options =>
                 options.UseNpgsql(config.GetConnectionString("PostgresConnection")));
 
-            service.AddSingleton(new MongoDbContext(
+            var mongoDbContext = new MongoDbContext(
                 config.GetConnectionString("MongoConnection") ?? throw new InvalidOperationException("MongoDB connection string is missing."),
                 config["MongoDbName"] ?? "UalaChallenge"
-            ));
+            );
+            
+            service.AddSingleton(mongoDbContext);
+            service.AddSingleton<IMongoDatabase>(provider => mongoDbContext.Database);
         }
 
         public static void AddCaching(this IServiceCollection service, IConfiguration config)
@@ -42,6 +48,12 @@ namespace Uala.Challenge.Api.ServiceRegistration
                 options.InstanceName = "UalaChallenge";
             });
             service.AddScoped<ICacheService, RedisCacheService>();
+        }
+
+        public static void AddKafka(this IServiceCollection service)
+        {
+            service.AddSingleton<IKafkaProducer, KafkaProducer>();
+            service.AddHostedService<TweetCreatedConsumer>();
         }
 
         public static void AddMediatr(this IServiceCollection service)
@@ -96,6 +108,5 @@ namespace Uala.Challenge.Api.ServiceRegistration
                 }
             }
         }
-
     }
 }

@@ -1,5 +1,7 @@
 using Moq;
+using Uala.Challenge.Application.Interfaces;
 using Uala.Challenge.Application.Tweets.Queries;
+using Uala.Challenge.Domain.Common;
 using Uala.Challenge.Domain.Entities;
 using Uala.Challenge.Domain.Repositories;
 using Uala.Challenge.Domain.Services;
@@ -9,48 +11,66 @@ namespace Uala.Challenge.UnitTests.Application.Tweets.Queries
     [TestFixture]
     public class GetTimelineQueryHandlerTests
     {
-        private Mock<ITweetRepository> _tweetRepositoryMock;
+        private Mock<ITimelineRepository> _timelineRepositoryMock;
         private Mock<IUserRepository> _userRepositoryMock;
-        private Mock<ICacheService> _caceServiceMock;
+        private Mock<ICacheService> _cacheServiceMock;
 
         private GetTimelineQueryHandler _handler;
 
         [SetUp]
         public void SetUp()
         {
-            _tweetRepositoryMock = new Mock<ITweetRepository>();
+            _timelineRepositoryMock = new Mock<ITimelineRepository>();
             _userRepositoryMock = new Mock<IUserRepository>();
-            _caceServiceMock = new Mock<ICacheService>();
-            _handler = new GetTimelineQueryHandler(_tweetRepositoryMock.Object, _userRepositoryMock.Object, _caceServiceMock.Object);
+            _cacheServiceMock = new Mock<ICacheService>();
+            _handler = new GetTimelineQueryHandler(_timelineRepositoryMock.Object, _userRepositoryMock.Object, _cacheServiceMock.Object);
         }
 
         [Test]
-        public async Task Handle_UserExistsAndHasTweets_ShouldReturnPagedResultOfTimelineQueryResponse()
+        public async Task Handle_UserExistsAndHasTimeline_ShouldReturnPagedResultOfTimelineQueryResponse()
         {
             // Arrange
             var userId = Guid.NewGuid();
+            var authorId1 = Guid.NewGuid();
+            var authorId2 = Guid.NewGuid();
             var pageNumber = 1;
             var pageSize = 10;
             var query = new GetTimelineQuery(userId, pageNumber, pageSize);
 
-            var followedUser1Id = Guid.NewGuid();
-            var user = new User
+            var timelinesFromRepo = new List<Timeline>
             {
-                Id = userId,
-                Username = "testuser",
-                Following = new List<User> { new User { Id = followedUser1Id, Username = "followed1" } }
+                new Timeline 
+                { 
+                    Id = Guid.NewGuid(), 
+                    UserId = userId, 
+                    TweetId = Guid.NewGuid(),
+                    AuthorId = authorId1,
+                    Content = "Tweet 1 by author1", 
+                    CreatedAt = DateTime.UtcNow.AddHours(-1) 
+                },
+                new Timeline 
+                { 
+                    Id = Guid.NewGuid(), 
+                    UserId = userId, 
+                    TweetId = Guid.NewGuid(),
+                    AuthorId = authorId2,
+                    Content = "Tweet 2 by author2", 
+                    CreatedAt = DateTime.UtcNow.AddHours(-2) 
+                }
             };
-            _userRepositoryMock.Setup(r => r.Get(userId, It.IsAny<bool>(), It.IsAny<bool>())).ReturnsAsync(user);
+            var totalTimelines = timelinesFromRepo.Count;
 
-            var tweetsFromRepo = new List<Tweet>
+            _timelineRepositoryMock.Setup(r => r.GetTimelineAsync(userId, pageNumber, pageSize))
+                .ReturnsAsync((timelinesFromRepo, (long)totalTimelines));
+
+            // Setup user repository to return usernames
+            var users = new List<User>
             {
-                new Tweet { Id = Guid.NewGuid(), Content = "Tweet 1 by user", UserId = userId, CreatedAt = DateTime.UtcNow.AddHours(-1) },
-                new Tweet { Id = Guid.NewGuid(), Content = "Tweet 2 by followed", UserId = followedUser1Id, CreatedAt = DateTime.UtcNow.AddHours(-2) }
+                new User { Id = authorId1, Username = "author1" },
+                new User { Id = authorId2, Username = "author2" }
             };
-            var totalTweets = tweetsFromRepo.Count;
-
-            _tweetRepositoryMock.Setup(r => r.GetTimelineAsync(It.Is<IEnumerable<Guid>>(ids => ids.Contains(userId) && ids.Contains(followedUser1Id)), pageNumber, pageSize))
-                .ReturnsAsync(new Tuple<IEnumerable<Tweet>, int>(tweetsFromRepo, totalTweets));
+            _userRepositoryMock.Setup(r => r.GetUsersByIdsAsync(It.IsAny<IEnumerable<Guid>>()))
+                .ReturnsAsync(users);
 
             // Act
             var result = await _handler.Handle(query, CancellationToken.None);
@@ -59,18 +79,20 @@ namespace Uala.Challenge.UnitTests.Application.Tweets.Queries
             Assert.IsNotNull(result);
             Assert.AreEqual(pageNumber, result.PageNumber);
             Assert.AreEqual(pageSize, result.PageSize);
-            Assert.AreEqual(totalTweets, result.TotalItems);
-            Assert.AreEqual((int)Math.Ceiling((double)totalTweets / pageSize), result.TotalPages);
-            Assert.AreEqual(tweetsFromRepo.Count, result.Items.Count);
-            Assert.IsTrue(result.Items.Any(t => t.Content == "Tweet 1 by user"));
-            Assert.IsTrue(result.Items.Any(t => t.Content == "Tweet 2 by followed"));
+            Assert.AreEqual(totalTimelines, result.TotalItems);
+            Assert.AreEqual((int)Math.Ceiling((double)totalTimelines / pageSize), result.TotalPages);
+            Assert.AreEqual(timelinesFromRepo.Count, result.Items.Count);
+            Assert.IsTrue(result.Items.Any(t => t.Content == "Tweet 1 by author1"));
+            Assert.IsTrue(result.Items.Any(t => t.Content == "Tweet 2 by author2"));
+            Assert.IsTrue(result.Items.Any(t => t.Username == "author1"));
+            Assert.IsTrue(result.Items.Any(t => t.Username == "author2"));
 
-            _userRepositoryMock.Verify(r => r.Get(userId, It.IsAny<bool>(), It.IsAny<bool>()), Times.Once);
-            _tweetRepositoryMock.Verify(r => r.GetTimelineAsync(It.IsAny<IEnumerable<Guid>>(), pageNumber, pageSize), Times.Once);
+            _timelineRepositoryMock.Verify(r => r.GetTimelineAsync(userId, pageNumber, pageSize), Times.Once);
+            _userRepositoryMock.Verify(r => r.GetUsersByIdsAsync(It.IsAny<IEnumerable<Guid>>()), Times.Once);
         }
 
         [Test]
-        public async Task Handle_UserExistsButNoTweetsFound_ShouldReturnEmptyPagedResult()
+        public async Task Handle_UserExistsButNoTimelineFound_ShouldReturnEmptyPagedResult()
         {
             // Arrange
             var userId = Guid.NewGuid();
@@ -78,14 +100,11 @@ namespace Uala.Challenge.UnitTests.Application.Tweets.Queries
             var pageSize = 10;
             var query = new GetTimelineQuery(userId, pageNumber, pageSize);
 
-            var user = new User { Id = userId, Username = "testuser", Following = new List<User>() }; // No followings
-            _userRepositoryMock.Setup(r => r.Get(userId, It.IsAny<bool>(), It.IsAny<bool>())).ReturnsAsync(user);
+            var emptyTimelinesList = new List<Timeline>();
+            var totalTimelines = 0;
 
-            var emptyTweetsList = new List<Tweet>();
-            var totalTweets = 0;
-
-            _tweetRepositoryMock.Setup(r => r.GetTimelineAsync(It.Is<IEnumerable<Guid>>(ids => ids.Contains(userId) && ids.Count() == 1), pageNumber, pageSize))
-                .Returns(Task.FromResult(new Tuple<IEnumerable<Tweet>, int>(emptyTweetsList.AsEnumerable(), totalTweets)));
+            _timelineRepositoryMock.Setup(r => r.GetTimelineAsync(userId, pageNumber, pageSize))
+                .ReturnsAsync((emptyTimelinesList, (long)totalTimelines));
 
             // Act
             var result = await _handler.Handle(query, CancellationToken.None);
@@ -94,96 +113,103 @@ namespace Uala.Challenge.UnitTests.Application.Tweets.Queries
             Assert.IsNotNull(result);
             Assert.AreEqual(pageNumber, result.PageNumber);
             Assert.AreEqual(pageSize, result.PageSize);
-            Assert.AreEqual(totalTweets, result.TotalItems);
+            Assert.AreEqual(totalTimelines, result.TotalItems);
             Assert.AreEqual(0, result.TotalPages);
-            Assert.IsEmpty(result.Items);
+            Assert.AreEqual(0, result.Items.Count);
 
-            _userRepositoryMock.Verify(r => r.Get(userId, It.IsAny<bool>(), It.IsAny<bool>()), Times.Once);
-            _tweetRepositoryMock.Verify(r => r.GetTimelineAsync(It.IsAny<IEnumerable<Guid>>(), pageNumber, pageSize), Times.Once);
+            _timelineRepositoryMock.Verify(r => r.GetTimelineAsync(userId, pageNumber, pageSize), Times.Once);
+            _userRepositoryMock.Verify(r => r.GetUsersByIdsAsync(It.IsAny<IEnumerable<Guid>>()), Times.Never);
         }
 
         [Test]
-        public void Handle_UserNotFound_ShouldThrowArgumentNullException()
-        {
-            // Arrange
-            var userId = Guid.NewGuid();
-            var query = new GetTimelineQuery(userId, 1, 10);
-
-            _userRepositoryMock.Setup(r => r.Get(userId, It.IsAny<bool>(), It.IsAny<bool>())).ReturnsAsync((User)null);
-
-            // Act & Assert
-            Assert.ThrowsAsync<ArgumentNullException>(() => _handler.Handle(query, CancellationToken.None));
-
-            _userRepositoryMock.Verify(r => r.Get(userId, It.IsAny<bool>(), It.IsAny<bool>()), Times.Once);
-            _tweetRepositoryMock.Verify(r => r.GetTimelineAsync(It.IsAny<IEnumerable<Guid>>(), It.IsAny<int>(), It.IsAny<int>()), Times.Never);
-        }
-
-        [Test]
-        public async Task Handle_UserHasNoFollowings_ShouldFetchOnlyOwnTweetsAndReturnPagedResult()
+        public async Task Handle_WithCacheHit_ShouldReturnCachedResult()
         {
             // Arrange
             var userId = Guid.NewGuid();
             var pageNumber = 1;
             var pageSize = 10;
             var query = new GetTimelineQuery(userId, pageNumber, pageSize);
+            var cacheKey = $"timeline:{userId}:page:{pageNumber}:size:{pageSize}";
 
-            var user = new User { Id = userId, Username = "lonelyuser", Following = new List<User>() }; // No one followed
-            _userRepositoryMock.Setup(r => r.Get(userId, It.IsAny<bool>(), It.IsAny<bool>())).ReturnsAsync(user);
-
-            var ownTweets = new List<Tweet>
+            var cachedResult = new PagedResult<GetTimelineQueryResponse>
             {
-                new Tweet { Id = Guid.NewGuid(), Content = "My own tweet", UserId = userId, CreatedAt = DateTime.UtcNow }
+                Items = new List<GetTimelineQueryResponse>
+                {
+                    new GetTimelineQueryResponse 
+                    { 
+                        Id = Guid.NewGuid(), 
+                        Content = "Cached tweet", 
+                        UserId = Guid.NewGuid(),
+                        Username = "cacheduser",
+                        CreatedAt = DateTime.UtcNow 
+                    }
+                },
+                PageNumber = pageNumber,
+                PageSize = pageSize,
+                TotalItems = 1,
+                TotalPages = 1
             };
-            var totalTweets = ownTweets.Count;
 
-            _tweetRepositoryMock.Setup(r => r.GetTimelineAsync(It.Is<IEnumerable<Guid>>(ids => ids.Count() == 1 && ids.First() == userId), pageNumber, pageSize))
-                .Returns(Task.FromResult( new Tuple<IEnumerable<Tweet>, int>(ownTweets.AsEnumerable(), totalTweets)));
+            _cacheServiceMock.Setup(c => c.GetAsync<PagedResult<GetTimelineQueryResponse>>(cacheKey))
+                .ReturnsAsync(cachedResult);
 
             // Act
             var result = await _handler.Handle(query, CancellationToken.None);
 
             // Assert
             Assert.IsNotNull(result);
-            Assert.AreEqual(totalTweets, result.Items.Count);
-            Assert.AreEqual(userId, result.Items.First().UserId);
-            Assert.AreEqual("My own tweet", result.Items.First().Content);
+            Assert.AreEqual(cachedResult.Items.Count, result.Items.Count);
+            Assert.AreEqual(cachedResult.Items.First().Content, result.Items.First().Content);
 
-            _userRepositoryMock.Verify(r => r.Get(userId, It.IsAny<bool>(), It.IsAny<bool>()), Times.Once);
-            _tweetRepositoryMock.Verify(r => r.GetTimelineAsync(It.Is<IEnumerable<Guid>>(ids => ids.Count() == 1 && ids.First() == userId), pageNumber, pageSize), Times.Once);
+            _cacheServiceMock.Verify(c => c.GetAsync<PagedResult<GetTimelineQueryResponse>>(cacheKey), Times.Once);
+            _timelineRepositoryMock.Verify(r => r.GetTimelineAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>()), Times.Never);
         }
 
         [Test]
-        public async Task Handle_UserHasNullFollowings_ShouldFetchOnlyOwnTweetsAndReturnPagedResult()
+        public async Task Handle_WithCacheMiss_ShouldFetchFromRepositoryAndCache()
         {
             // Arrange
             var userId = Guid.NewGuid();
+            var authorId = Guid.NewGuid();
             var pageNumber = 1;
             var pageSize = 10;
             var query = new GetTimelineQuery(userId, pageNumber, pageSize);
+            var cacheKey = $"timeline:{userId}:page:{pageNumber}:size:{pageSize}";
 
-            var user = new User { Id = userId, Username = "userwithnullfollowing", Following = null }; // Following collection is null
-            _userRepositoryMock.Setup(r => r.Get(userId, It.IsAny<bool>(), It.IsAny<bool>())).ReturnsAsync(user);
+            _cacheServiceMock.Setup(c => c.GetAsync<PagedResult<GetTimelineQueryResponse>>(cacheKey))
+                .ReturnsAsync((PagedResult<GetTimelineQueryResponse>)null);
 
-            var ownTweets = new List<Tweet>
+            var timelinesFromRepo = new List<Timeline>
             {
-                new Tweet { Id = Guid.NewGuid(), Content = "My only tweet", UserId = userId, CreatedAt = DateTime.UtcNow }
+                new Timeline 
+                { 
+                    Id = Guid.NewGuid(), 
+                    UserId = userId, 
+                    TweetId = Guid.NewGuid(),
+                    AuthorId = authorId,
+                    Content = "Fresh tweet", 
+                    CreatedAt = DateTime.UtcNow 
+                }
             };
-            var totalTweets = ownTweets.Count;
 
-            _tweetRepositoryMock.Setup(r => r.GetTimelineAsync(It.Is<IEnumerable<Guid>>(ids => ids.Count() == 1 && ids.First() == userId), pageNumber, pageSize))
-                .ReturnsAsync(new Tuple<IEnumerable<Tweet>, int>(ownTweets, totalTweets));
+            _timelineRepositoryMock.Setup(r => r.GetTimelineAsync(userId, pageNumber, pageSize))
+                .ReturnsAsync((timelinesFromRepo, 1L));
+
+            var users = new List<User> { new User { Id = authorId, Username = "author" } };
+            _userRepositoryMock.Setup(r => r.GetUsersByIdsAsync(It.IsAny<IEnumerable<Guid>>()))
+                .ReturnsAsync(users);
 
             // Act
             var result = await _handler.Handle(query, CancellationToken.None);
 
             // Assert
             Assert.IsNotNull(result);
-            Assert.AreEqual(totalTweets, result.Items.Count);
-            Assert.AreEqual(userId, result.Items.First().UserId);
-            Assert.AreEqual("My only tweet", result.Items.First().Content);
+            Assert.AreEqual(1, result.Items.Count);
+            Assert.AreEqual("Fresh tweet", result.Items.First().Content);
 
-            _userRepositoryMock.Verify(r => r.Get(userId, It.IsAny<bool>(), It.IsAny<bool>()), Times.Once);
-            _tweetRepositoryMock.Verify(r => r.GetTimelineAsync(It.Is<IEnumerable<Guid>>(ids => ids.Count() == 1 && ids.First() == userId), pageNumber, pageSize), Times.Once);
+            _cacheServiceMock.Verify(c => c.GetAsync<PagedResult<GetTimelineQueryResponse>>(cacheKey), Times.Once);
+            _cacheServiceMock.Verify(c => c.SetAsync(cacheKey, It.IsAny<PagedResult<GetTimelineQueryResponse>>(), TimeSpan.FromMinutes(5)), Times.Once);
+            _timelineRepositoryMock.Verify(r => r.GetTimelineAsync(userId, pageNumber, pageSize), Times.Once);
         }
     }
 }

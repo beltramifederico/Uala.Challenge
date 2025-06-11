@@ -1,21 +1,28 @@
 # Uala Challenge - Microblogging Platform
 
-Una plataforma de microblogging escalable construida con .NET 8, implementando Clean Architecture, Domain-Driven Design (DDD) y CQRS con optimizaciones de performance avanzadas.
+Una plataforma de microblogging escalable construida con .NET 8, implementando Clean Architecture, Domain-Driven Design (DDD), CQRS y Event-Driven Architecture con optimizaciones de performance avanzadas.
 
 ## Arquitectura
 
-### Clean Architecture + DDD + CQRS
+### Clean Architecture + DDD + CQRS + Event-Driven
 El proyecto sigue los principios de Clean Architecture con una clara separación de responsabilidades:
 
-- **Domain**: Entidades de negocio y reglas de dominio
-- **Application**: Casos de uso, comandos, queries y servicios de aplicación
-- **Infrastructure**: Implementación de repositorios, contextos de base de datos y servicios externos
+- **Domain**: Entidades de negocio, eventos de dominio y reglas de dominio
+- **Application**: Casos de uso, comandos, queries, interfaces y servicios de aplicación
+- **Infrastructure**: Implementación de repositorios, contextos de base de datos, servicios externos y productores/consumidores de eventos
 - **API**: Controladores y configuración de la aplicación web
+
+### Event-Driven Architecture con Kafka
+- **Event Sourcing**: Los tweets generan eventos que son procesados asincrónicamente
+- **Timeline Generation**: Cuando se crea un tweet, se publican eventos en Kafka para generar entradas de timeline para todos los followers
+- **Desacoplamiento**: La creación de tweets está desacoplada de la generación de timelines
+- **Escalabilidad**: Procesamiento asíncrono permite manejar grandes volúmenes de tweets
 
 ### Polyglot Persistence + Caching Strategy
 - **PostgreSQL**: Datos relacionales (usuarios, relaciones de seguimiento)
-- **MongoDB**: Tweets y timelines (optimizado para lecturas masivas)
+- **MongoDB**: Tweets y **Timeline entries** (optimizado para lecturas masivas y escrituras distribuidas)
 - **Redis**: Caché distribuido para timelines y optimización de performance
+- **Kafka**: Message broker para eventos de dominio y procesamiento asíncrono
 
 ## Stack Tecnológico
 
@@ -25,12 +32,16 @@ El proyecto sigue los principios de Clean Architecture con una clara separación
 - **Entity Framework Core** - ORM para PostgreSQL
 - **MongoDB Driver** - Cliente para MongoDB
 - **StackExchange.Redis** - Cliente para Redis
+- **Confluent.Kafka** - Cliente para Apache Kafka
 - **Serilog** - Logging estructurado
+- **FluentValidation** - Validación de modelos
 
-### Bases de Datos
+### Bases de Datos y Messaging
 - **PostgreSQL 15** - Base de datos relacional
 - **MongoDB 7** - Base de datos de documentos
 - **Redis 7** - Caché en memoria
+- **Apache Kafka** - Message broker para eventos
+- **Zookeeper** - Coordinación para Kafka
 
 ### Testing
 - **NUnit** - Framework de testing
@@ -42,23 +53,17 @@ El proyecto sigue los principios de Clean Architecture con una clara separación
 
 ## Optimizaciones de Performance
 
-### 1. **Caché con Redis** 
+### 1. **Event-Driven Timeline Generation**
+- **Async Processing**: La generación de timelines es asíncrona via Kafka
+- **Fan-out Strategy**: Un tweet genera N entradas de timeline (una por follower)
+- **Horizontal Scaling**: Los consumers de Kafka pueden escalarse independientemente
+- **Fault Tolerance**: Retry logic y dead letter queues para eventos fallidos
+
+### 2. **Caché con Redis** 
 - **Timeline Caching**: Los timelines se cachean por 5 minutos
 - **Cache Keys**: `timeline:{userId}:page:{pageNumber}:size:{pageSize}`
 - **Hit Rate Esperado**: 80-95% para usuarios activos
 - **Latencia**: Reducción de 200-500ms a 5-50ms
-
-### 2. **Agregaciones MongoDB Optimizadas** 
-- **Pipeline de Agregación**: Usa `$facet` para obtener count y datos en una sola query
-- **Índices Estratégicos**:
-  - Compuesto: `UserId + CreatedAt` para timeline queries
-  - Descendente: `CreatedAt` para ordenamiento
-  - Texto: `Content` para búsquedas futuras
-
-### 3. **Invalidación Inteligente de Caché** 
-- **Estrategia**: Invalidar caché cuando se crean nuevos tweets
-- **Granular**: Solo afecta a usuarios relevantes
-- **Eficiencia**: Mantiene freshness sin sacrificar performance
 
 ## Instalación y Configuración
 
@@ -72,7 +77,7 @@ El proyecto sigue los principios de Clean Architecture con una clara separación
 git clone <repository-url>
 cd Uala.Challenge
 
-# Levantar toda la infraestructura (PostgreSQL + MongoDB + Redis + API)
+# Levantar toda la infraestructura (PostgreSQL + MongoDB + Redis + Kafka + API)
 docker-compose up -d
 
 # Ver logs de la aplicación
@@ -84,15 +89,16 @@ curl http://localhost:8080/api/users
 
 ### Opción 2: Desarrollo Local
 ```bash
-# 1. Levantar solo las bases de datos y Redis
-docker-compose up postgres mongodb redis -d
+# 1. Levantar solo las bases de datos y Kafka
+docker-compose up postgres mongodb redis kafka -d
 
 # 2. Configurar connection strings en appsettings.json
 {
   "ConnectionStrings": {
     "PostgresConnection": "Host=localhost;Database=UalaChallenge;Username=postgres;Password=yoursecurepassword",
     "MongoConnection": "mongodb://root:rootpassword@localhost:27017",
-    "RedisConnection": "localhost:6379"
+    "RedisConnection": "localhost:6379",
+    "KafkaBootstrapServers": "localhost:9092"
   },
   "MongoDbName": "UalaChallenge"
 }
@@ -109,8 +115,8 @@ docker-compose down
 # Reiniciar solo la API
 docker-compose restart api
 
-# Ver logs de Redis
-docker-compose logs redis
+# Ver logs de Kafka
+docker-compose logs kafka
 
 # Limpiar volúmenes (CUIDADO: elimina datos)
 docker-compose down -v
@@ -174,6 +180,7 @@ dotnet test --filter "GetAllUsersQueryHandlerTests"
 - **MongoDB**: Sharding por `UserId` para distribución de tweets
 - **Redis**: Redis Cluster para caché distribuido
 - **PostgreSQL**: Read replicas para queries de usuarios
+- **Kafka**: Múltiples brokers y particiones para eventos
 
 #### Vertical Scaling
 - **Memory**: Aumentar memoria para Redis (recomendado: 2-8GB)
@@ -216,6 +223,7 @@ ASPNETCORE_ENVIRONMENT=Production
 ConnectionStrings__PostgresConnection=<production-postgres-url>
 ConnectionStrings__MongoConnection=<production-mongo-url>
 ConnectionStrings__RedisConnection=<production-redis-url>
+ConnectionStrings__KafkaBootstrapServers=<production-kafka-url>
 ```
 
 ## Dockerfile

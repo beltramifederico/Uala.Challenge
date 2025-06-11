@@ -7,7 +7,7 @@ namespace Uala.Challenge.Domain.Common
         public List<T> Items { get; set; } = new();
         public int PageNumber { get; set; }
         public int PageSize { get; set; }
-        public int TotalItems { get; set; }
+        public long TotalItems { get; set; }
         public int TotalPages { get; set; }
 
         public bool HasPreviousPage => PageNumber > 1;
@@ -18,7 +18,7 @@ namespace Uala.Challenge.Domain.Common
         }
 
         [JsonConstructor]
-        public PagedResult(List<T> items, int totalItems, int pageNumber, int pageSize)
+        public PagedResult(List<T> items, long totalItems, int pageNumber, int pageSize)
         {
             Items = items;
             TotalItems = totalItems;
